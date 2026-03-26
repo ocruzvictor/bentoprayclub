@@ -1,21 +1,54 @@
 import express from 'express';
 import cors from 'cors';
-import { getSheetsClient, SPREADSHEET_ID, SHEET_NAME, CONFIG_SHEET_NAME, ensureSheetSetup } from './sheets';
+import { getSheetsClient, SPREADSHEET_ID, SHEET_NAME, CONFIG_SHEET_NAME, ensureSheetReady } from './sheets';
+import { normalizeSlotId } from '../shared/slots';
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-// Initialize sheet on startup (for local dev, Vercel might cold start this often)
-ensureSheetSetup();
+function mapParticipacaoRow(row: string[] = []) {
+  return {
+    slot_id: normalizeSlotId(row[0]),
+    nome: row[1] || '',
+    user_id: row[2] || '',
+    data: row[3] || '',
+  };
+}
+
+async function getReadySheets(res: express.Response) {
+  const sheets = getSheetsClient();
+
+  if (!sheets || !SPREADSHEET_ID) {
+    res.status(500).json({ error: 'Google Sheets not configured' });
+    return null;
+  }
+
+  try {
+    await ensureSheetReady();
+    return sheets;
+  } catch (error) {
+    console.error('Error preparing spreadsheet:', error);
+    res.status(500).json({ error: 'Failed to prepare spreadsheet' });
+    return null;
+  }
+}
 
 // API Routes
+app.get('/api/health', async (req, res) => {
+  const sheets = await getReadySheets(res);
+  if (!sheets) return;
+
+  res.json({
+    ok: true,
+    spreadsheetConfigured: Boolean(SPREADSHEET_ID),
+  });
+});
+
 app.get('/api/config', async (req, res) => {
-  const sheets = getSheetsClient();
-  if (!sheets || !SPREADSHEET_ID) {
-    return res.status(500).json({ error: 'Google Sheets not configured' });
-  }
+  const sheets = await getReadySheets(res);
+  if (!sheets) return;
 
   try {
     const response = await sheets.spreadsheets.values.get({
@@ -37,10 +70,8 @@ app.get('/api/config', async (req, res) => {
 });
 
 app.post('/api/config', async (req, res) => {
-  const sheets = getSheetsClient();
-  if (!sheets || !SPREADSHEET_ID) {
-    return res.status(500).json({ error: 'Google Sheets not configured' });
-  }
+  const sheets = await getReadySheets(res);
+  if (!sheets) return;
 
   const { key, value } = req.body;
   if (!key) {
@@ -86,10 +117,8 @@ app.post('/api/config', async (req, res) => {
 });
 
 app.get('/api/participacoes', async (req, res) => {
-  const sheets = getSheetsClient();
-  if (!sheets || !SPREADSHEET_ID) {
-    return res.status(500).json({ error: 'Google Sheets not configured' });
-  }
+  const sheets = await getReadySheets(res);
+  if (!sheets) return;
 
   try {
     const response = await sheets.spreadsheets.values.get({
@@ -98,14 +127,7 @@ app.get('/api/participacoes', async (req, res) => {
     });
 
     const rows = response.data.values || [];
-    
-    const participacoes = rows
-      .map((row) => ({
-        slot_id: row[0],
-        nome: row[1],
-        user_id: row[2],
-        data: row[3],
-      }));
+    const participacoes = rows.map(mapParticipacaoRow);
 
     res.json(participacoes);
   } catch (error) {
@@ -115,14 +137,13 @@ app.get('/api/participacoes', async (req, res) => {
 });
 
 app.post('/api/participacoes', async (req, res) => {
-  const sheets = getSheetsClient();
-  if (!sheets || !SPREADSHEET_ID) {
-    return res.status(500).json({ error: 'Google Sheets not configured' });
-  }
+  const sheets = await getReadySheets(res);
+  if (!sheets) return;
 
   const { slot_id, nome, user_id } = req.body;
+  const normalizedSlotId = normalizeSlotId(slot_id);
   
-  if (!slot_id || !nome || !user_id) {
+  if (!normalizedSlotId || !nome || !user_id) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
@@ -136,7 +157,7 @@ app.post('/api/participacoes', async (req, res) => {
     
     const rows = getResponse.data.values || [];
     const alreadyParticipating = rows.some(
-      row => row[0] === slot_id && row[2] === user_id
+      (row) => normalizeSlotId(row[0]) === normalizedSlotId && row[2] === user_id
     );
 
     if (alreadyParticipating) {
@@ -148,7 +169,7 @@ app.post('/api/participacoes', async (req, res) => {
       range: `${SHEET_NAME}!A:D`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [[slot_id, nome, user_id, today]],
+        values: [[normalizedSlotId, nome, user_id, today]],
       },
     });
 
@@ -160,14 +181,13 @@ app.post('/api/participacoes', async (req, res) => {
 });
 
 app.delete('/api/participacoes', async (req, res) => {
-  const sheets = getSheetsClient();
-  if (!sheets || !SPREADSHEET_ID) {
-    return res.status(500).json({ error: 'Google Sheets not configured' });
-  }
+  const sheets = await getReadySheets(res);
+  if (!sheets) return;
 
   const { slot_id, user_id } = req.body;
+  const normalizedSlotId = normalizeSlotId(slot_id);
 
-  if (!slot_id || !user_id) {
+  if (!normalizedSlotId || !user_id) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
@@ -180,7 +200,8 @@ app.delete('/api/participacoes', async (req, res) => {
     const rows = getResponse.data.values || [];
     
     const rowIndexToDelete = rows.findIndex(
-      (row, index) => index > 0 && row[0] === slot_id && row[2] === user_id
+      (row, index) =>
+        index > 0 && normalizeSlotId(row[0]) === normalizedSlotId && row[2] === user_id
     );
 
     if (rowIndexToDelete === -1) {

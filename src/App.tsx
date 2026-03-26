@@ -2,22 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Clock, User, LogOut, CheckCircle2, AlertCircle, Share2, Users, TrendingDown, TrendingUp, X, Info } from 'lucide-react';
 import { api, Participacao } from './services/api';
-
-interface Slot {
-  id: string;
-  horario: string;
-}
-
-const SLOTS: Slot[] = [
-  { id: '1', horario: '00h–05h' },
-  { id: '2', horario: '05h–07h' },
-  { id: '3', horario: '07h–10h' },
-  { id: '4', horario: '10h–13h' },
-  { id: '5', horario: '13h–16h' },
-  { id: '6', horario: '16h–19h' },
-  { id: '7', horario: '19h–22h' },
-  { id: '8', horario: '22h–00h' },
-];
+import { SLOTS, Slot, getSlotLabel, getSlotOrder, normalizeSlotId } from '../shared/slots';
 
 export default function App() {
   const [user, setUser] = useState<{ nome: string; id: string } | null>(null);
@@ -39,9 +24,14 @@ export default function App() {
 
   // Load user from localStorage
   useEffect(() => {
-    const savedUser = localStorage.getItem('bento_pray_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+    try {
+      const savedUser = localStorage.getItem('bento_pray_user');
+      if (savedUser) {
+        setUser(JSON.parse(savedUser));
+      }
+    } catch (error) {
+      console.error('Erro ao carregar usuário do localStorage:', error);
+      localStorage.removeItem('bento_pray_user');
     }
   }, []);
 
@@ -66,7 +56,7 @@ export default function App() {
   const fetchParticipacoes = useCallback(async () => {
     try {
       const data = await api.getParticipacoes();
-      setParticipacoes(data);
+      setParticipacoes(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to fetch participacoes:', error);
     } finally {
@@ -77,7 +67,7 @@ export default function App() {
   const fetchConfig = useCallback(async () => {
     try {
       const data = await api.getConfig();
-      setConfig(data);
+      setConfig(data || {});
     } catch (error) {
       console.error('Failed to fetch config:', error);
     }
@@ -95,12 +85,14 @@ export default function App() {
   }, [fetchParticipacoes, fetchConfig]);
 
   const getSlotCount = (slotId: string) => {
-    return participacoes.filter((p) => p.slot_id === slotId).length;
+    const normalizedSlotId = normalizeSlotId(slotId);
+    return participacoes.filter((p) => p.slot_id === normalizedSlotId).length;
   };
 
   const isUserInSlot = (slotId: string) => {
     if (!user) return false;
-    return participacoes.some((p) => p.slot_id === slotId && p.user_id === user.id);
+    const normalizedSlotId = normalizeSlotId(slotId);
+    return participacoes.some((p) => p.slot_id === normalizedSlotId && p.user_id === user.id);
   };
 
   const getSlotColorClass = (count: number) => {
@@ -117,6 +109,7 @@ export default function App() {
 
   const handleParticipate = async (slotId: string, bypassSuggestion = false) => {
     if (!user) return;
+    if (isUserInSlot(slotId)) return;
 
     const count = getSlotCount(slotId);
     
@@ -127,8 +120,8 @@ export default function App() {
     // Suggestion logic
     if (!bypassSuggestion && count > average && count >= 3) {
       // Find slots with fewer people
-      const availableSlots = SLOTS.filter(s => !isUserInSlot(s.id) && s.id !== slotId);
-      const sortedSlots = availableSlots.sort((a, b) => getSlotCount(a.id) - getSlotCount(b.id));
+      const availableSlots = SLOTS.filter((slot) => !isUserInSlot(slot.id) && slot.id !== slotId);
+      const sortedSlots = [...availableSlots].sort((a, b) => getSlotCount(a.id) - getSlotCount(b.id));
       const suggestions = sortedSlots.slice(0, 3);
 
       if (suggestions.length > 0 && getSlotCount(suggestions[0].id) < count) {
@@ -181,16 +174,16 @@ export default function App() {
   const handleShare = async () => {
     let shareText = 'Escala de oração 🙏\n\n';
     
-    SLOTS.forEach(slot => {
+    SLOTS.forEach((slot) => {
       const count = getSlotCount(slot.id);
       if (count === 0) {
-        shareText += `${slot.horario}: disponível ✅\n`;
+        shareText += `${slot.label}: disponível ✅\n`;
       } else {
-        shareText += `${slot.horario}: ${count} ${count === 1 ? 'pessoa' : 'pessoas'}\n`;
+        shareText += `${slot.label}: ${count} ${count === 1 ? 'pessoa' : 'pessoas'}\n`;
       }
     });
 
-    shareText += `\nParticipe: ${window.location.href}`;
+    shareText += `\nParticipe: ${window.location.origin}`;
 
     if (navigator.share) {
       try {
@@ -267,24 +260,31 @@ export default function App() {
     );
   }
 
-  const mySlots = participacoes
+  const mySlotsMap = new Map<string, { id: string; horario: string }>();
+
+  participacoes
     .filter((p) => p.user_id === user.id)
-    .map((p) => {
-      const slotDef = SLOTS.find(s => s.id === p.slot_id);
-      return {
-        id: p.slot_id,
-        horario: slotDef ? slotDef.horario : p.slot_id
-      };
+    .forEach((p) => {
+      const normalizedSlotId = normalizeSlotId(p.slot_id);
+      if (!mySlotsMap.has(normalizedSlotId)) {
+        mySlotsMap.set(normalizedSlotId, {
+          id: normalizedSlotId,
+          horario: getSlotLabel(normalizedSlotId),
+        });
+      }
     });
-    
-  const uniqueUsersCount = new Set(participacoes.map(p => p.user_id)).size;
-  
-  // Calculate emptiest and most crowded slots
-  const slotsWithCounts = SLOTS.map(slot => ({
+
+  const mySlots = Array.from(mySlotsMap.values()).sort(
+    (a, b) => getSlotOrder(a.id) - getSlotOrder(b.id)
+  );
+
+  const uniqueUsersCount = new Set(participacoes.map((p) => p.user_id)).size;
+
+  const slotsWithCounts = SLOTS.map((slot) => ({
     ...slot,
-    count: getSlotCount(slot.id)
+    count: getSlotCount(slot.id),
   }));
-  
+
   const sortedByCount = [...slotsWithCounts].sort((a, b) => a.count - b.count);
   const emptiestSlot = sortedByCount[0];
   const mostCrowdedSlot = sortedByCount[sortedByCount.length - 1];
@@ -340,14 +340,14 @@ export default function App() {
                 <TrendingDown size={16} className="text-emerald-600" />
                 <span className="font-medium">Mais vazio:</span>
               </div>
-              <span className="font-bold">{emptiestSlot?.horario} ({emptiestSlot?.count})</span>
+              <span className="font-bold">{emptiestSlot?.label} ({emptiestSlot?.count ?? 0})</span>
             </div>
             <div className="flex items-center justify-between bg-rose-50 text-rose-800 px-3 py-2 rounded-lg text-sm border border-rose-100">
               <div className="flex items-center gap-2">
                 <TrendingUp size={16} className="text-rose-600" />
                 <span className="font-medium">Mais cheio:</span>
               </div>
-              <span className="font-bold">{mostCrowdedSlot?.horario} ({mostCrowdedSlot?.count})</span>
+              <span className="font-bold">{mostCrowdedSlot?.label} ({mostCrowdedSlot?.count ?? 0})</span>
             </div>
           </div>
         </section>
@@ -426,7 +426,7 @@ export default function App() {
                 >
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <span className="text-xl font-bold text-slate-800">{slot.horario}</span>
+                      <span className="text-xl font-bold text-slate-800">{slot.label}</span>
                       {count === 0 && <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Prioridade</span>}
                     </div>
                     <div className={`px-3 py-1.5 rounded-full text-sm font-bold border flex items-center gap-1.5 ${getSlotColorClass(count)}`}>
@@ -482,7 +482,7 @@ export default function App() {
                   onClick={() => handleParticipate(slot.id, true)}
                   className="w-full bg-white border border-slate-200 hover:border-blue-300 hover:ring-1 hover:ring-blue-100 p-3 rounded-xl flex items-center justify-between transition-all"
                 >
-                  <span className="font-bold text-slate-800">{slot.horario}</span>
+                  <span className="font-bold text-slate-800">{slot.label}</span>
                   <span className="text-sm text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">
                     {getSlotCount(slot.id)} pessoas
                   </span>
@@ -514,7 +514,6 @@ export default function App() {
 function AdminPanel() {
   const [participacoes, setParticipacoes] = useState<Participacao[]>([]);
   const [loading, setLoading] = useState(true);
-  const [config, setConfig] = useState<Record<string, string>>({});
   const [mensagemTopo, setMensagemTopo] = useState('');
   const [savingConfig, setSavingConfig] = useState(false);
 
@@ -530,9 +529,8 @@ function AdminPanel() {
         api.getConfig()
       ]);
       
-      setParticipacoes(partData);
-      setConfig(confData);
-      setMensagemTopo(confData.mensagem_topo || '');
+      setParticipacoes(Array.isArray(partData) ? partData : []);
+      setMensagemTopo(confData?.mensagem_topo || '');
     } catch (error) {
       console.error('Error fetching admin data:', error);
     } finally {
@@ -558,7 +556,7 @@ function AdminPanel() {
     
     try {
       await api.removeParticipacao({ slot_id: slotId, user_id: userId });
-      fetchData();
+      await fetchData();
     } catch (error: any) {
       console.error('Error deleting:', error);
       alert(error.message || 'Erro de conexão');
@@ -603,10 +601,10 @@ function AdminPanel() {
           <h2 className="text-lg font-bold text-slate-800 mb-4">Gerenciar Participações ({participacoes.length} total)</h2>
           
           <div className="space-y-6">
-            {Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0])).map(([slotId, parts]: [string, Participacao[]]) => (
+            {Object.entries(grouped).sort((a, b) => getSlotOrder(a[0]) - getSlotOrder(b[0])).map(([slotId, parts]: [string, Participacao[]]) => (
               <div key={slotId} className="border border-slate-200 rounded-xl overflow-hidden">
                 <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 font-bold text-slate-700">
-                  Horário: {slotId} ({parts.length} pessoas)
+                  Horário: {getSlotLabel(slotId)} ({parts.length} {parts.length === 1 ? 'pessoa' : 'pessoas'})
                 </div>
                 <div className="divide-y divide-slate-100">
                   {parts.map((p: Participacao) => (

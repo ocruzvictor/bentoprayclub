@@ -1,3 +1,5 @@
+import { normalizeSlotId } from '../../shared/slots';
+
 export interface Participacao {
   slot_id: string;
   nome: string;
@@ -9,14 +11,21 @@ export const api = {
   async getParticipacoes(): Promise<Participacao[]> {
     const res = await fetch('/api/participacoes');
     if (!res.ok) throw new Error('Failed to fetch participacoes');
-    return res.json();
+    const data = (await res.json()) as Participacao[];
+    return data.map((participacao) => ({
+      ...participacao,
+      slot_id: normalizeSlotId(participacao.slot_id),
+    }));
   },
   
   async addParticipacao(data: { slot_id: string; nome: string; user_id: string }) {
     const res = await fetch('/api/participacoes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        ...data,
+        slot_id: normalizeSlotId(data.slot_id),
+      }),
     });
     if (!res.ok) {
       const error = await res.json();
@@ -29,7 +38,10 @@ export const api = {
     const res = await fetch('/api/participacoes', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        ...data,
+        slot_id: normalizeSlotId(data.slot_id),
+      }),
     });
     if (!res.ok) {
       const error = await res.json();
