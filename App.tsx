@@ -1,23 +1,44 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Clock, User, LogOut, CheckCircle2, AlertCircle, Share2, Users, TrendingDown, TrendingUp, X, Info } from 'lucide-react';
+import {
+  Clock,
+  User,
+  LogOut,
+  CheckCircle2,
+  AlertCircle,
+  Share2,
+  Users,
+  TrendingDown,
+  TrendingUp,
+  X,
+  Info,
+} from 'lucide-react';
 import { api, Participacao } from './services/api';
 
 interface Slot {
   id: string;
-  horario: string;
+  label: string;
 }
 
-const slots = [
-  { id: "slot_05_07", label: "05h–07h" },
-  { id: "slot_07_10", label: "07h–10h" },
-  { id: "slot_10_13", label: "10h–13h" },
-  { id: "slot_13_16", label: "13h–16h" },
-  { id: "slot_16_19", label: "16h–19h" },
-  { id: "slot_19_22", label: "19h–22h" },
-  { id: "slot_22_00", label: "22h–00h" },
-  { id: "slot_00_05", label: "00h–05h" }
+const SLOTS: Slot[] = [
+  { id: 'slot_05_07', label: '05h–07h' },
+  { id: 'slot_07_10', label: '07h–10h' },
+  { id: 'slot_10_13', label: '10h–13h' },
+  { id: 'slot_13_16', label: '13h–16h' },
+  { id: 'slot_16_19', label: '16h–19h' },
+  { id: 'slot_19_22', label: '19h–22h' },
+  { id: 'slot_22_00', label: '22h–00h' },
+  { id: 'slot_00_05', label: '00h–05h' },
 ];
+
+function getSlotLabel(slotId: string) {
+  return SLOTS.find((slot) => slot.id === slotId)?.label || slotId;
+}
+
+function getSlotOrder(slotId: string) {
+  const index = SLOTS.findIndex((slot) => slot.id === slotId);
+  return index === -1 ? 999 : index;
+}
 
 export default function App() {
   const [user, setUser] = useState<{ nome: string; id: string } | null>(null);
@@ -28,20 +49,27 @@ export default function App() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [suggestionModal, setSuggestionModal] = useState<{
     show: boolean;
-    slotId: slot.id;
-    suggestions: {slot.label};
-  }>({ show: false, slotId: '', suggestions: [] });
+    slotId: string;
+    suggestions: Slot[];
+  }>({
+    show: false,
+    slotId: '',
+    suggestions: [],
+  });
 
-  // Admin Panel Component
   if (window.location.pathname === '/admin') {
     return <AdminPanel />;
   }
 
-  // Load user from localStorage
   useEffect(() => {
-    const savedUser = localStorage.getItem('bento_pray_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+    try {
+      const savedUser = localStorage.getItem('bento_pray_user');
+      if (savedUser) {
+        setUser(JSON.parse(savedUser));
+      }
+    } catch (error) {
+      console.error('Erro ao carregar usuário do localStorage:', error);
+      localStorage.removeItem('bento_pray_user');
     }
   }, []);
 
@@ -53,6 +81,7 @@ export default function App() {
       nome: nameInput.trim(),
       id: uuidv4(),
     };
+
     localStorage.setItem('bento_pray_user', JSON.stringify(newUser));
     setUser(newUser);
   };
@@ -66,7 +95,7 @@ export default function App() {
   const fetchParticipacoes = useCallback(async () => {
     try {
       const data = await api.getParticipacoes();
-      setParticipacoes(data);
+      setParticipacoes(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to fetch participacoes:', error);
     } finally {
@@ -77,20 +106,21 @@ export default function App() {
   const fetchConfig = useCallback(async () => {
     try {
       const data = await api.getConfig();
-      setConfig(data);
+      setConfig(data || {});
     } catch (error) {
       console.error('Failed to fetch config:', error);
     }
   }, []);
 
-  // Auto-refresh every 10 seconds
   useEffect(() => {
     fetchParticipacoes();
     fetchConfig();
+
     const interval = setInterval(() => {
       fetchParticipacoes();
       fetchConfig();
     }, 10000);
+
     return () => clearInterval(interval);
   }, [fetchParticipacoes, fetchConfig]);
 
@@ -117,18 +147,17 @@ export default function App() {
 
   const handleParticipate = async (slotId: string, bypassSuggestion = false) => {
     if (!user) return;
+    if (isUserInSlot(slotId)) return;
 
     const count = getSlotCount(slotId);
-    
-    // Calculate average participants per slot
     const totalParticipants = participacoes.length;
     const average = totalParticipants / SLOTS.length;
 
-    // Suggestion logic
     if (!bypassSuggestion && count > average && count >= 3) {
-      // Find slots with fewer people
-      const availableSlots = SLOTS.filter(s => !isUserInSlot(s.id) && s.id !== slotId);
-      const sortedSlots = availableSlots.sort((a, b) => getSlotCount(a.id) - getSlotCount(b.id));
+      const availableSlots = SLOTS.filter((slot) => !isUserInSlot(slot.id) && slot.id !== slotId);
+      const sortedSlots = [...availableSlots].sort(
+        (a, b) => getSlotCount(a.id) - getSlotCount(b.id)
+      );
       const suggestions = sortedSlots.slice(0, 3);
 
       if (suggestions.length > 0 && getSlotCount(suggestions[0].id) < count) {
@@ -153,7 +182,7 @@ export default function App() {
       setSuggestionModal({ show: false, slotId: '', suggestions: [] });
     } catch (error: any) {
       console.error('Error participating:', error);
-      alert(error.message || 'Erro de conexão');
+      alert(error?.message || 'Erro de conexão');
     } finally {
       setActionLoading(null);
     }
@@ -172,7 +201,7 @@ export default function App() {
       await fetchParticipacoes();
     } catch (error: any) {
       console.error('Error leaving:', error);
-      alert(error.message || 'Erro de conexão');
+      alert(error?.message || 'Erro de conexão');
     } finally {
       setActionLoading(null);
     }
@@ -180,17 +209,17 @@ export default function App() {
 
   const handleShare = async () => {
     let shareText = 'Escala de oração 🙏\n\n';
-    
-    SLOTS.forEach(slot => {
+
+    SLOTS.forEach((slot) => {
       const count = getSlotCount(slot.id);
       if (count === 0) {
-        shareText += `${slot.horario}: disponível ✅\n`;
+        shareText += `${slot.label}: disponível ✅\n`;
       } else {
-        shareText += `${slot.horario}: ${count} ${count === 1 ? 'pessoa' : 'pessoas'}\n`;
+        shareText += `${slot.label}: ${count} ${count === 1 ? 'pessoa' : 'pessoas'}\n`;
       }
     });
 
-    shareText += `\nParticipe: ${window.location.href}`;
+    shareText += `\nParticipe: ${window.location.origin}`;
 
     if (navigator.share) {
       try {
@@ -199,7 +228,7 @@ export default function App() {
           text: shareText,
         });
       } catch (error: any) {
-        if (error.name !== 'AbortError') {
+        if (error?.name !== 'AbortError') {
           console.error('Error sharing:', error);
         }
       }
@@ -222,17 +251,19 @@ export default function App() {
             {config.mensagem_topo}
           </div>
         )}
-        
+
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 w-full max-w-md text-center mb-6">
           <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
             <Clock size={32} />
           </div>
           <h1 className="text-2xl font-bold text-slate-800 mb-2">Bento Pray Club</h1>
           <p className="text-slate-500 mb-8">Escala de oração contínua. Junte-se a nós!</p>
-          
+
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label htmlFor="name" className="sr-only">Seu Nome</label>
+              <label htmlFor="name" className="sr-only">
+                Seu Nome
+              </label>
               <input
                 id="name"
                 type="text"
@@ -267,38 +298,43 @@ export default function App() {
     );
   }
 
-  const mySlots = participacoes
+  const mySlotsMap = new Map<string, { id: string; horario: string }>();
+
+  participacoes
     .filter((p) => p.user_id === user.id)
-    .map((p) => {
-      const slotDef = SLOTS.find(s => s.id === p.slot_id);
-      return {
-        id: p.slot_id,
-        horario: slotDef ? slotDef.horario : p.slot_id
-      };
+    .forEach((p) => {
+      if (!mySlotsMap.has(p.slot_id)) {
+        mySlotsMap.set(p.slot_id, {
+          id: p.slot_id,
+          horario: getSlotLabel(p.slot_id),
+        });
+      }
     });
-    
-  const uniqueUsersCount = new Set(participacoes.map(p => p.user_id)).size;
-  
-  // Calculate emptiest and most crowded slots
-  const slotsWithCounts = SLOTS.map(slot => ({
+
+  const mySlots = Array.from(mySlotsMap.values()).sort(
+    (a, b) => getSlotOrder(a.id) - getSlotOrder(b.id)
+  );
+
+  const uniqueUsersCount = new Set(participacoes.map((p) => p.user_id)).size;
+
+  const slotsWithCounts = SLOTS.map((slot) => ({
     ...slot,
-    count: getSlotCount(slot.id)
+    count: getSlotCount(slot.id),
   }));
-  
+
   const sortedByCount = [...slotsWithCounts].sort((a, b) => a.count - b.count);
   const emptiestSlot = sortedByCount[0];
   const mostCrowdedSlot = sortedByCount[sortedByCount.length - 1];
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
-      {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Clock className="text-blue-600" size={24} />
             <h1 className="font-bold text-lg text-slate-800">Bento Pray Club</h1>
           </div>
-          <button 
+          <button
             onClick={handleLogout}
             className="text-slate-500 hover:text-slate-700 p-2"
             aria-label="Sair"
@@ -309,20 +345,18 @@ export default function App() {
       </header>
 
       <main className="max-w-md mx-auto p-4 space-y-6">
-        {/* Top Message */}
         {config.mensagem_topo && (
           <section className="bg-amber-50 rounded-2xl p-5 border border-amber-200 shadow-sm text-amber-900 text-center font-medium">
             {config.mensagem_topo}
           </section>
         )}
 
-        {/* Resumo Geral */}
         <section className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
           <h2 className="text-sm font-semibold text-slate-600 mb-4 uppercase tracking-wider flex items-center gap-2">
             <Users size={16} />
             Resumo Geral
           </h2>
-          
+
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
               <p className="text-xs text-blue-600 font-medium mb-1">Total de Pessoas</p>
@@ -340,19 +374,22 @@ export default function App() {
                 <TrendingDown size={16} className="text-emerald-600" />
                 <span className="font-medium">Mais vazio:</span>
               </div>
-              <span className="font-bold">{emptiestSlot?.horario} ({emptiestSlot?.count})</span>
+              <span className="font-bold">
+                {emptiestSlot?.label} ({emptiestSlot?.count ?? 0})
+              </span>
             </div>
             <div className="flex items-center justify-between bg-rose-50 text-rose-800 px-3 py-2 rounded-lg text-sm border border-rose-100">
               <div className="flex items-center gap-2">
                 <TrendingUp size={16} className="text-rose-600" />
                 <span className="font-medium">Mais cheio:</span>
               </div>
-              <span className="font-bold">{mostCrowdedSlot?.horario} ({mostCrowdedSlot?.count})</span>
+              <span className="font-bold">
+                {mostCrowdedSlot?.label} ({mostCrowdedSlot?.count ?? 0})
+              </span>
             </div>
           </div>
         </section>
 
-        {/* Welcome & My Slots */}
         <section className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
@@ -371,13 +408,13 @@ export default function App() {
             {mySlots.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {mySlots.map((slot) => (
-                  <div 
-                    key={slot.id} 
+                  <div
+                    key={slot.id}
                     className="bg-blue-50 text-blue-700 pl-3 pr-1 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 border border-blue-100"
                   >
                     <CheckCircle2 size={16} />
                     {slot.horario}
-                    <button 
+                    <button
                       onClick={() => handleLeave(slot.id)}
                       disabled={actionLoading === slot.id}
                       className="p-1 hover:bg-blue-100 rounded-md transition-colors text-blue-500 hover:text-blue-700 disabled:opacity-50"
@@ -394,7 +431,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* Share Button */}
         <button
           onClick={handleShare}
           className="w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold py-4 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
@@ -403,7 +439,6 @@ export default function App() {
           Compartilhar escala
         </button>
 
-        {/* Slots List */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-800">Horários Fixos</h2>
@@ -415,21 +450,32 @@ export default function App() {
               const count = getSlotCount(slot.id);
               const isParticipating = isUserInSlot(slot.id);
               const isLoading = actionLoading === slot.id;
-              
+
               return (
-                <div 
+                <div
                   key={slot.id}
                   className={`bg-white rounded-xl p-4 border shadow-sm transition-all ${
-                    isParticipating ? 'border-blue-300 ring-1 ring-blue-100' : 
-                    count === 0 ? 'border-emerald-200 bg-emerald-50/30' : 'border-slate-200'
+                    isParticipating
+                      ? 'border-blue-300 ring-1 ring-blue-100'
+                      : count === 0
+                      ? 'border-emerald-200 bg-emerald-50/30'
+                      : 'border-slate-200'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <span className="text-xl font-bold text-slate-800">{slot.horario}</span>
-                      {count === 0 && <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Prioridade</span>}
+                      <span className="text-xl font-bold text-slate-800">{slot.label}</span>
+                      {count === 0 && (
+                        <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
+                          Prioridade
+                        </span>
+                      )}
                     </div>
-                    <div className={`px-3 py-1.5 rounded-full text-sm font-bold border flex items-center gap-1.5 ${getSlotColorClass(count)}`}>
+                    <div
+                      className={`px-3 py-1.5 rounded-full text-sm font-bold border flex items-center gap-1.5 ${getSlotColorClass(
+                        count
+                      )}`}
+                    >
                       <span>{getSlotStatusIcon(count)}</span>
                       {count} {count === 1 ? 'pessoa' : 'pessoas'}
                     </div>
@@ -461,7 +507,6 @@ export default function App() {
         </section>
       </main>
 
-      {/* Suggestion Modal */}
       {suggestionModal.show && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-xl">
@@ -471,10 +516,10 @@ export default function App() {
               </div>
               <h3 className="text-lg font-bold text-amber-900 mb-1">Horário Cheio 🙏</h3>
               <p className="text-amber-700 text-sm">
-                Este horário já tem bastante gente. Você pode ajudar mais nestes horários que estão vazios:
+                Este horário já tem bastante gente. Você pode ajudar mais nestes horários que estão mais vazios:
               </p>
             </div>
-            
+
             <div className="p-4 space-y-3 bg-slate-50">
               {suggestionModal.suggestions.map((slot) => (
                 <button
@@ -482,7 +527,7 @@ export default function App() {
                   onClick={() => handleParticipate(slot.id, true)}
                   className="w-full bg-white border border-slate-200 hover:border-blue-300 hover:ring-1 hover:ring-blue-100 p-3 rounded-xl flex items-center justify-between transition-all"
                 >
-                  <span className="font-bold text-slate-800">{slot.horario}</span>
+                  <span className="font-bold text-slate-800">{slot.label}</span>
                   <span className="text-sm text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">
                     {getSlotCount(slot.id)} pessoas
                   </span>
@@ -514,7 +559,6 @@ export default function App() {
 function AdminPanel() {
   const [participacoes, setParticipacoes] = useState<Participacao[]>([]);
   const [loading, setLoading] = useState(true);
-  const [config, setConfig] = useState<Record<string, string>>({});
   const [mensagemTopo, setMensagemTopo] = useState('');
   const [savingConfig, setSavingConfig] = useState(false);
 
@@ -525,14 +569,10 @@ function AdminPanel() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [partData, confData] = await Promise.all([
-        api.getParticipacoes(),
-        api.getConfig()
-      ]);
-      
-      setParticipacoes(partData);
-      setConfig(confData);
-      setMensagemTopo(confData.mensagem_topo || '');
+      const [partData, confData] = await Promise.all([api.getParticipacoes(), api.getConfig()]);
+
+      setParticipacoes(Array.isArray(partData) ? partData : []);
+      setMensagemTopo(confData?.mensagem_topo || '');
     } catch (error) {
       console.error('Error fetching admin data:', error);
     } finally {
@@ -547,7 +587,7 @@ function AdminPanel() {
       alert('Mensagem salva com sucesso!');
     } catch (error: any) {
       console.error('Error saving config:', error);
-      alert(error.message || 'Erro de conexão');
+      alert(error?.message || 'Erro de conexão');
     } finally {
       setSavingConfig(false);
     }
@@ -555,31 +595,38 @@ function AdminPanel() {
 
   const handleDelete = async (slotId: string, userId: string) => {
     if (!confirm('Tem certeza que deseja remover esta participação?')) return;
-    
+
     try {
       await api.removeParticipacao({ slot_id: slotId, user_id: userId });
-      fetchData();
+      await fetchData();
     } catch (error: any) {
       console.error('Error deleting:', error);
-      alert(error.message || 'Erro de conexão');
+      alert(error?.message || 'Erro de conexão');
     }
   };
 
-  if (loading) return <div className="p-8 text-center">Carregando painel admin...</div>;
+  if (loading) {
+    return <div className="p-8 text-center">Carregando painel admin...</div>;
+  }
 
-  // Group participacoes by slot
   const grouped = participacoes.reduce((acc, p) => {
     if (!acc[p.slot_id]) acc[p.slot_id] = [];
     acc[p.slot_id].push(p);
     return acc;
   }, {} as Record<string, Participacao[]>);
 
+  const sortedGroups = Object.entries(grouped).sort(
+    (a, b) => getSlotOrder(a[0]) - getSlotOrder(b[0])
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-slate-800">Painel Administrativo</h1>
-          <a href="/" className="text-blue-600 hover:underline">Voltar para o App</a>
+          <a href="/" className="text-blue-600 hover:underline">
+            Voltar para o App
+          </a>
         </div>
 
         <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -600,17 +647,23 @@ function AdminPanel() {
         </section>
 
         <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-          <h2 className="text-lg font-bold text-slate-800 mb-4">Gerenciar Participações ({participacoes.length} total)</h2>
-          
+          <h2 className="text-lg font-bold text-slate-800 mb-4">
+            Gerenciar Participações ({participacoes.length} total)
+          </h2>
+
           <div className="space-y-6">
-            {Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0])).map(([slotId, parts]: [string, Participacao[]]) => (
+            {sortedGroups.map(([slotId, parts]) => (
               <div key={slotId} className="border border-slate-200 rounded-xl overflow-hidden">
                 <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 font-bold text-slate-700">
-                  Horário: {slotId} ({parts.length} pessoas)
+                  Horário: {getSlotLabel(slotId)} ({parts.length}{' '}
+                  {parts.length === 1 ? 'pessoa' : 'pessoas'})
                 </div>
                 <div className="divide-y divide-slate-100">
-                  {parts.map((p: Participacao) => (
-                    <div key={`${p.slot_id}-${p.user_id}`} className="px-4 py-3 flex items-center justify-between hover:bg-slate-50">
+                  {parts.map((p) => (
+                    <div
+                      key={`${p.slot_id}-${p.user_id}`}
+                      className="px-4 py-3 flex items-center justify-between hover:bg-slate-50"
+                    >
                       <div>
                         <p className="font-medium text-slate-800">{p.nome}</p>
                         <p className="text-xs text-slate-500">ID: {p.user_id}</p>
@@ -627,7 +680,8 @@ function AdminPanel() {
                 </div>
               </div>
             ))}
-            {Object.keys(grouped).length === 0 && (
+
+            {sortedGroups.length === 0 && (
               <p className="text-slate-500 italic">Nenhuma participação registrada.</p>
             )}
           </div>
