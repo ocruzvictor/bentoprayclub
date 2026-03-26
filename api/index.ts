@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
-import { getSheetsClient, SPREADSHEET_ID, SHEET_NAME, CONFIG_SHEET_NAME, ensureSheetReady } from './sheets';
-import { normalizeSlotId } from '../shared/slots';
+import { getSheetsClient, SPREADSHEET_ID, SHEET_NAME, CONFIG_SHEET_NAME, ensureSheetReady } from './sheets.js';
+import { normalizeSlotId } from '../shared/slots.js';
 
 const app = express();
 

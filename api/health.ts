@@ -1,4 +1,4 @@
-import { hasSheetsEnv, SPREADSHEET_ID } from './_lib/runtime';
+import { hasSheetsEnv, SPREADSHEET_ID } from './_lib/runtime.js';
 
 export default function handler(req: any, res: any) {
   if (req.method !== 'GET') {

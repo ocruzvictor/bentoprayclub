@@ -1,5 +1,5 @@
-import { getReadySheets, mapParticipacaoRow, SHEET_NAME, SPREADSHEET_ID } from './_lib/runtime';
-import { normalizeSlotId } from '../shared/slots';
+import { getReadySheets, mapParticipacaoRow, SHEET_NAME, SPREADSHEET_ID } from './_lib/runtime.js';
+import { normalizeSlotId } from '../shared/slots.js';
 
 export default async function handler(req: any, res: any) {
   try {

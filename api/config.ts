@@ -1,4 +1,4 @@
-import { CONFIG_SHEET_NAME, getReadySheets, SPREADSHEET_ID } from './_lib/runtime';
+import { CONFIG_SHEET_NAME, getReadySheets, SPREADSHEET_ID } from './_lib/runtime.js';
 
 export default async function handler(req: any, res: any) {
   try {

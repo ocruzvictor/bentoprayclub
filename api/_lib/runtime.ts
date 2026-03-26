@@ -1,5 +1,5 @@
-import { CONFIG_SHEET_NAME, getSheetsClient, SHEET_NAME, SPREADSHEET_ID, ensureSheetReady } from '../sheets';
-import { normalizeSlotId } from '../../shared/slots';
+import { CONFIG_SHEET_NAME, getSheetsClient, SHEET_NAME, SPREADSHEET_ID, ensureSheetReady } from '../sheets.js';
+import { normalizeSlotId } from '../../shared/slots.js';
 
 export { CONFIG_SHEET_NAME, SHEET_NAME, SPREADSHEET_ID };
 
