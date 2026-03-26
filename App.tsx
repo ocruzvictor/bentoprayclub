@@ -8,15 +8,15 @@ interface Slot {
   horario: string;
 }
 
-const SLOTS: Slot[] = [
-  { id: '1', horario: '00h–05h' },
-  { id: '2', horario: '05h–07h' },
-  { id: '3', horario: '07h–10h' },
-  { id: '4', horario: '10h–13h' },
-  { id: '5', horario: '13h–16h' },
-  { id: '6', horario: '16h–19h' },
-  { id: '7', horario: '19h–22h' },
-  { id: '8', horario: '22h–00h' },
+const slots = [
+  { id: "slot_05_07", label: "05h–07h" },
+  { id: "slot_07_10", label: "07h–10h" },
+  { id: "slot_10_13", label: "10h–13h" },
+  { id: "slot_13_16", label: "13h–16h" },
+  { id: "slot_16_19", label: "16h–19h" },
+  { id: "slot_19_22", label: "19h–22h" },
+  { id: "slot_22_00", label: "22h–00h" },
+  { id: "slot_00_05", label: "00h–05h" }
 ];
 
 export default function App() {
@@ -28,8 +28,8 @@ export default function App() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [suggestionModal, setSuggestionModal] = useState<{
     show: boolean;
-    slotId: string;
-    suggestions: Slot[];
+    slotId: slot.id;
+    suggestions: {slot.label};
   }>({ show: false, slotId: '', suggestions: [] });
 
   // Admin Panel Component
