@@ -1,0 +1,5 @@
+{
+  "name": "Bento Pray Club",
+  "description": "Web app mobile-first para gerenciar uma escala diária de oração com integração ao Google Sheets.",
+  "requestFramePermissions": []
+}
